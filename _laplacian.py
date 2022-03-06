@@ -18,8 +18,8 @@ class LaplacianWrapper(NoiseModelBase):
     wrapped: NoiseModelBase
     """Underlying noise model."""
 
-    delta: hints.Scalar
-    """Threshold parameter for Huber loss. Applied _after_ the wrapped noise model."""
+    eps: hints.Scalar = 1e-8
+    """Term to add to avoid dividing by zero"""
 
     @overrides
     def get_residual_dim(self) -> int:
@@ -28,13 +28,8 @@ class LaplacianWrapper(NoiseModelBase):
     @overrides
     def whiten_residual_vector(self, residual_vector: hints.Array) -> hints.Array:
         residual_vector = self.wrapped.whiten_residual_vector(residual_vector)
-
         residual_norm = jnp.linalg.norm(residual_vector)
-        return jnp.where(
-            residual_norm < self.delta,
-            residual_vector,
-            residual_vector * jnp.sqrt(self.delta / residual_norm),
-        )
+        return residual_vector / (jnp.sqrt(residual_norm) + self.eps)
 
     @overrides
     def whiten_jacobian(
@@ -43,10 +38,6 @@ class LaplacianWrapper(NoiseModelBase):
         residual_vector: hints.Array,
     ) -> hints.Array:
         jacobian = self.wrapped.whiten_jacobian(jacobian, residual_vector)
-
         residual_norm = jnp.linalg.norm(residual_vector)
-        return jnp.where(
-            residual_norm < self.delta,
-            jacobian,
-            jacobian * jnp.sqrt(self.delta / residual_norm),
-        )
+        return jacobian / (jnp.sqrt(residual_norm) + self.eps)
+        
