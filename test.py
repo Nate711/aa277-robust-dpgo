@@ -6,9 +6,9 @@ import jaxfg
 
 import _laplacian
 
-OUTER_LOOP_ITERS = 100
-FIXED_FACTOR_EPS = 1.0
-gamma = 0.2
+OUTER_LOOP_ITERS = 80
+FIXED_FACTOR_EPS = 1.0e3
+gamma = 0.5
 
 def make_graph_1(fixed_factor_eps=1e6):
     """fixed_factor_eps: square root of precision matrix"""
@@ -46,16 +46,23 @@ def make_graph_1(fixed_factor_eps=1e6):
             T_a_b=jaxlie.SE2.from_xy_theta(0, 0, 0.0),
             noise_model=jaxfg.noises.DiagonalGaussian(jnp.ones(3)),
         ),
+
         jaxfg.geometry.PriorFactor.make(
             variable=pose_variables[0],
-            mu=jaxlie.SE2.from_xy_theta(0.0, -1.1, 0.0),
+            mu=jaxlie.SE2.from_xy_theta(0.0, -1.1e1, 0.0),
             noise_model=jaxfg.noises.DiagonalGaussian(jnp.ones(3)*fixed_factor_eps),
         ),
         jaxfg.geometry.PriorFactor.make(
             variable=pose_variables[4],
-            mu=jaxlie.SE2.from_xy_theta(1.1, 0.0, 0.0),
+            mu=jaxlie.SE2.from_xy_theta(1.1e1, 0.0, 0.0),
             noise_model=jaxfg.noises.DiagonalGaussian(jnp.ones(3)*fixed_factor_eps),
         ),
+        jaxfg.geometry.PriorFactor.make(
+            variable=pose_variables[2],
+            mu=jaxlie.SE2.from_xy_theta(0.0, 0.0, 0.0),
+            noise_model=jaxfg.noises.DiagonalGaussian(jnp.ones(3)),
+        ),
+        
     ]
     graph = jaxfg.core.StackedFactorGraph.make(factors)
     return pose_variables, graph
@@ -149,11 +156,11 @@ with jaxfg.utils.stopwatch("Outer loop timing"):
         graph_1_node_4 = solution_assignments_1.get_stacked_value(jaxfg.geometry.SE2Variable).unit_complex_xy[3,:]
         
         # Update priors
-        graph_1.factor_stacks[1].factor.mu.unit_complex_xy[0,:] = graph_1.factor_stacks[1].factor.mu.unit_complex_xy[0,:] * gamma + graph_2_node_2 * (1 - gamma)
-        graph_1.factor_stacks[1].factor.mu.unit_complex_xy[1,:] = graph_1.factor_stacks[1].factor.mu.unit_complex_xy[1,:] * gamma + graph_2_node_4 * (1 - gamma)
+        graph_1.factor_stacks[1].factor.mu.unit_complex_xy[0,:] = graph_1.factor_stacks[1].factor.mu.unit_complex_xy[0,:] * (1 - gamma) + graph_2_node_2 * (gamma)
+        graph_1.factor_stacks[1].factor.mu.unit_complex_xy[1,:] = graph_1.factor_stacks[1].factor.mu.unit_complex_xy[1,:] * (1 - gamma) + graph_2_node_4 * (gamma)
 
-        graph_2.factor_stacks[1].factor.mu.unit_complex_xy[0,:] = graph_2.factor_stacks[1].factor.mu.unit_complex_xy[0,:] * gamma + graph_1_node_2 * (1 - gamma)
-        graph_2.factor_stacks[1].factor.mu.unit_complex_xy[1,:] = graph_2.factor_stacks[1].factor.mu.unit_complex_xy[1,:] * gamma + graph_1_node_4 * (1 - gamma)
+        graph_2.factor_stacks[1].factor.mu.unit_complex_xy[0,:] = graph_2.factor_stacks[1].factor.mu.unit_complex_xy[0,:] * (1 - gamma) + graph_1_node_2 * (gamma)
+        graph_2.factor_stacks[1].factor.mu.unit_complex_xy[1,:] = graph_2.factor_stacks[1].factor.mu.unit_complex_xy[1,:] * (1 - gamma) + graph_1_node_4 * (gamma)
 
 
 
@@ -193,7 +200,8 @@ import matplotlib.pyplot as plt
 #     c="r",
 #     label="Initial",
 # )
-for (graph_1_soln, graph_2_soln) in zip(graph_1_solutions[-3:-1], graph_2_solutions[-3:-1]):
+alpha = 1.0
+for (graph_1_soln, graph_2_soln) in zip(graph_1_solutions[-10:-1], graph_2_solutions[-10:-1]):
     plt.plot(
         *(
             graph_1_soln.get_stacked_value(jaxfg.geometry.SE2Variable)
@@ -203,6 +211,7 @@ for (graph_1_soln, graph_2_soln) in zip(graph_1_solutions[-3:-1], graph_2_soluti
         # Equivalent:
         # *(onp.array([solution_poses.get_value(v).translation() for v in pose_variables]).T),
         c="g",
+        alpha=1-alpha,
         label="Optimized",
     )
     plt.plot(
@@ -214,7 +223,9 @@ for (graph_1_soln, graph_2_soln) in zip(graph_1_solutions[-3:-1], graph_2_soluti
         # Equivalent:
         # *(onp.array([solution_poses.get_value(v).translation() for v in pose_variables]).T),
         c="r",
+        alpha=1-alpha,
         label="Optimized",
     )
+    alpha *= 0.9
     plt.legend()
 plt.show()
