@@ -74,12 +74,14 @@ def partition_graph(poses, factors, agent_node_map):
   
   Returns:
     agent_graphs: Map from agent to its graph
-    communication_connections: Map from agent to map of agent to list. Each entry of the list corresponds to a prior factor. The values of the list correspond to (global node index, local node index)
-
-  To update the prior factors based on solutions from other graphs do:
-  For each prior in the stacked factors thing: find corresponding index 
-
-  Ideal comm structure: list with same index ordering as prior factors (to match factor stack). First element is which other agent, second element is the global node name (or local node index in that graph)
+    agnet_poses_all: Map from agent to its pose variables
+    communication_connections: Map from agent to list. The ith entry in the list 
+      corresponds to ith prior factor. The ith entry is a tuple of (which other 
+      agent the prior factor is associated with, the global id of the shared node, 
+      the id of the node in the other agent's graph). To update the priors based on
+      the optimization result. Loop through each agent's list. For each element in 
+      agent i's list, set the corresponding prior factor for agent i according to
+      the optimized value from its connected agent, agent j, using the tuple entries.
   """
   pose_index_map = {pose: i for (i, pose) in enumerate(poses)
                    }  # maps from pose variable to index in pose list
