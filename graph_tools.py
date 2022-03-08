@@ -83,8 +83,8 @@ def partition_graph(poses, factors, agent_node_map):
       agent i's list, set the corresponding prior factor for agent i according to
       the optimized value from its connected agent, agent j, using the tuple entries.
   """
-  pose_index_map = {pose: i for (i, pose) in enumerate(poses)
-                   }  # maps from pose variable to index in pose list
+  # maps from pose variable to index in pose list
+  pose_index_map = invert_list(poses)
 
   agent_graphs = {}
   agent_poses_all = {}
@@ -127,6 +127,7 @@ def partition_graph(poses, factors, agent_node_map):
                   T_a_b=copy.copy(f.T_a_b),
                   noise_model=copy.copy(f.noise_model)))
     # print("\nAgent I factors:", between_factors)
+    
     # Add priors corresponding to shared nodes
     prior_factors = []
     shared_node_indices = []
