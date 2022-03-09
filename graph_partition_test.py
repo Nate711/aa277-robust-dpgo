@@ -13,12 +13,12 @@ USE_ONP = True
 
 # Outer loop prior optimization params
 LEARNING_RATE = 0.1
-OUTER_ITERATIONS = 10
+OUTER_ITERATIONS = 1
 
 # Distributed optimization params
-DISTRIBUTED_CONSENSUS_ITERS = 5
+DISTRIBUTED_CONSENSUS_ITERS = 10
 FIXED_FACTOR_EPS = 1.0e3
-NOISE_MODEL = "gaussian"
+NOISE_MODEL = "gaussian" # can be "gaussian", "laplacian", "huber"
 HUBER_DELTA = 0.1
 
 initial_sqrt_precision = 1.0
@@ -107,7 +107,7 @@ def big_function(prior_precisions):
     # TODO: Wrap contents of this foor loop in function
     for agent in graphs:
       prior_factor_stack = graphs[agent].factor_stacks[1].factor
-      if NOISE_MODEL == 'huber':
+      if NOISE_MODEL in ['huber', 'laplacian']:
         noise_model = prior_factor_stack.noise_model.wrapped
       elif NOISE_MODEL == 'gaussian':
         noise_model = prior_factor_stack.noise_model
@@ -204,10 +204,10 @@ for gradient_descent_iter in range(OUTER_ITERATIONS):
       )
     # plt.legend()
   try:
-    os.mkdir('anim')
+    os.mkdir(f'anim/{NOISE_MODEL}')
   except FileExistsError:
     pass
-  plt.savefig(f'anim/{gradient_descent_iter}.png')
+  plt.savefig(f'anim/{NOISE_MODEL}/{gradient_descent_iter}.png')
   plt.clf()
   # plt.show()
 plt.plot(costs)
