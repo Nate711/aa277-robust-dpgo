@@ -6,6 +6,7 @@ from jax import numpy as jnp
 import numpy as np
 import jaxfg
 import copy
+import _laplacian
 
 
 def test_partition_graph():
@@ -65,7 +66,13 @@ def invert_list(unique_list):
   return invert_map({i: v for (i, v) in enumerate(unique_list)})
 
 
-def partition_graph(poses, factors, agent_node_map, prior_precision, use_onp=True):
+def partition_graph(poses,
+                    factors,
+                    agent_node_map,
+                    prior_precision,
+                    noise_model,
+                    huber_delta=1.0,
+                    use_onp=True):
   """
   Args:
     poses: List of pose variables in global graph
@@ -89,23 +96,16 @@ def partition_graph(poses, factors, agent_node_map, prior_precision, use_onp=Tru
   agent_graphs = {}
   agent_poses_all = {}
   communication_connections = {}
-
   global_node_to_solution_order = {}
 
   for agent_i in agent_node_map:
-    print("\n\nAgent=", agent_i)
-
     # nodes in agent i
     agent_to_global_map = agent_node_map[agent_i]
-    print("Nodes:", agent_to_global_map)
-
     global_to_agent_map = invert_list(agent_to_global_map)
 
     # make local poses
     agent_poses = [copy.copy(poses[i]) for i in agent_to_global_map]
     agent_poses_all[agent_i] = agent_poses
-    print("Agent poses:", agent_poses)
-
 
     # Track order in which agent poses are entered into between factors
     # index i corresponds to ith row in solution variable, value is global node index
@@ -120,7 +120,7 @@ def partition_graph(poses, factors, agent_node_map, prior_precision, use_onp=Tru
       # check if the global pose indices are subset of agent global node indices
       if set(global_factor_indices).issubset(set(agent_to_global_map)):
         if type(f) == jaxfg.geometry.BetweenFactor:
-          
+
           # Add factor to list if we haven't seen it before
           if global_factor_indices[0] not in agent_global_nodes_between_order:
             agent_global_nodes_between_order.append(global_factor_indices[0])
@@ -128,12 +128,10 @@ def partition_graph(poses, factors, agent_node_map, prior_precision, use_onp=Tru
             agent_global_nodes_between_order.append(global_factor_indices[1])
 
           # find local poses corresponding to the global poses
-          print("global factor indices", global_factor_indices)
           agent_pose_indices = tuple(
               global_to_agent_map[global_factor_indices[i]] for i in (0, 1))
           factor_poses = tuple(agent_poses[i] for i in agent_pose_indices)
-          print("agent pose indices:", agent_pose_indices)
-          # print("factor poses:",factor_poses)
+
           # add the connection between them
           between_factors.append(
               jaxfg.geometry.BetweenFactor.make(
@@ -142,20 +140,22 @@ def partition_graph(poses, factors, agent_node_map, prior_precision, use_onp=Tru
                   T_a_b=copy.copy(f.T_a_b),
                   noise_model=copy.copy(f.noise_model)))
 
-    global_node_to_solution_order[agent_i] = invert_list(agent_global_nodes_between_order)
-
-    # print("\nAgent I factors:", between_factors)
-    
-    # Add priors corresponding to shared nodes
+    global_node_to_solution_order[agent_i] = invert_list(
+        agent_global_nodes_between_order)
     prior_factors = []
     shared_node_indices = []
     for (agent_j, agent_j_nodes) in agent_node_map.items():
       if agent_i != agent_j:
         agent_j_global_to_local_map = invert_list(agent_j_nodes)
         for shared_node in set(agent_to_global_map).intersection(agent_j_nodes):
-          print("Shared Node:", shared_node)
-          print("Agent shared node:", global_to_agent_map[shared_node])
           agent_pose = agent_poses[global_to_agent_map[shared_node]]
+          
+          noise_model_ = jaxfg.noises.DiagonalGaussian(jnp.ones(3) * prior_precision)
+          if noise_model == 'huber':
+            noise_model_ = jaxfg.noises.HuberWrapper(noise_model_, delta=huber_delta)
+          elif noise_model == 'laplacian':
+            noise_model_ = _laplacian.LaplacianWrapper(noise_model_)
+
           prior_factors.append(
               jaxfg.geometry.PriorFactor.make(
                   variable=agent_pose,
@@ -164,24 +164,19 @@ def partition_graph(poses, factors, agent_node_map, prior_precision, use_onp=Tru
                       0.0,
                       0.0,
                   ),
-                  noise_model=jaxfg.noises.DiagonalGaussian(jnp.ones(3) * prior_precision),
+                  noise_model=noise_model_
               ))
           shared_node_indices.append(
               [agent_j, shared_node, agent_j_global_to_local_map[shared_node]])
-          # shared_node_indices.append(
-          #   [agent_j, shared_node, 0]
-          # )
-          print("Shared node tuple: ", shared_node_indices[-1])
-    # print("\nAgent I priors:", prior_factors)
     all_factors = between_factors + prior_factors
-    agent_graphs[agent_i] = jaxfg.core.StackedFactorGraph.make(all_factors, use_onp=use_onp)
+    agent_graphs[agent_i] = jaxfg.core.StackedFactorGraph.make(all_factors,
+                                                               use_onp=use_onp)
     communication_connections[agent_i] = shared_node_indices
-  print("before modification:",communication_connections)
-  # for agent in agent_node_map:
-  #   for tup in communication_connections[agent]:
-  #     tup[2] = global_node_to_solution_order[agent][tup[1]]
-  print("after modification:", communication_connections)
-  print("global node to soln order", global_node_to_solution_order)
+  for agent in agent_node_map:
+    for shared_node_tup in communication_connections[agent]:
+      (other_agent, global_node, _) = shared_node_tup
+      shared_node_tup[2] = global_node_to_solution_order[other_agent][
+          global_node]
 
   return agent_graphs, agent_poses_all, communication_connections
 

@@ -5,6 +5,7 @@ from jax import numpy as jnp
 import jaxfg
 import jax
 import graph_tools
+import graph_tools_nathan
 import matplotlib.pyplot as plt
 
 OUTER_LOOP_ITERS = 5
@@ -15,7 +16,7 @@ NOISE_MODEL = "gaussian"
 HUBER_DELTA = 0.1
 
 LEARNING_RATE = 0.1
-ITERATIONS = 50
+ITERATIONS = 10
 
 initial_sqrt_precision = 1.0
 gamma = 0.5
@@ -67,7 +68,7 @@ factors: List[jaxfg.core.FactorBase] = [
 ]
 
 (graphs, poses,
- comms) = graph_tools.partition_graph(pose_variables,
+ comms) = graph_tools_nathan.partition_graph(pose_variables,
                                       factors,
                                       agent_node_map={
                                           'agent A': [0, 1, 2],
@@ -211,4 +212,8 @@ for gradient_descent_iter in range(ITERATIONS):
     plt.clf()
     # plt.show()
 plt.plot(costs)
+plt.title("Cost versus iterations")
+plt.xlabel("Iteration")
+plt.ylabel("Cost")
+plt.savefig(f'cost_plots/noise={NOISE_MODEL}_huber-delta={HUBER_DELTA}_iters={ITERATIONS}_lr={LEARNING_RATE}.png')
 plt.show()
