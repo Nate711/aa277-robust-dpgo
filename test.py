@@ -10,6 +10,10 @@ OUTER_LOOP_ITERS = 80
 FIXED_FACTOR_EPS = 1.0e3
 gamma = 0.5
 
+
+def partition_graph(variables, factors, agent_node_map):
+    pass
+
 def make_graph_1(fixed_factor_eps=1e6):
     """fixed_factor_eps: square root of precision matrix"""
     pose_variables: List[jaxfg.geometry.SE2Variable] = [
