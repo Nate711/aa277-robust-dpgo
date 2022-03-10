@@ -25,72 +25,17 @@ HUBER_DELTA = 0.1
 
 initial_sqrt_precision = 1.0
 gamma = 0.5
-# pose_variables: List[jaxfg.geometry.SE2Variable] = [
-#     jaxfg.geometry.SE2Variable(),
-#     jaxfg.geometry.SE2Variable(),
-#     jaxfg.geometry.SE2Variable(),
-#     jaxfg.geometry.SE2Variable(),
-#     jaxfg.geometry.SE2Variable(),
-#     jaxfg.geometry.SE2Variable(),
-# ]
-# factors: List[jaxfg.core.FactorBase] = [
-#     jaxfg.geometry.BetweenFactor.make(
-#         variable_T_world_a=pose_variables[0],
-#         variable_T_world_b=pose_variables[1],
-#         T_a_b=jaxlie.SE2.from_xy_theta(1, 0, 0.0),
-#         noise_model=jaxfg.noises.DiagonalGaussian(jnp.ones(3)),
-#     ),
-#     jaxfg.geometry.BetweenFactor.make(
-#         variable_T_world_a=pose_variables[1],
-#         variable_T_world_b=pose_variables[2],
-#         T_a_b=jaxlie.SE2.from_xy_theta(0, 1.0, 0.0),
-#         noise_model=jaxfg.noises.DiagonalGaussian(jnp.ones(3)),
-#     ),
-#     jaxfg.geometry.BetweenFactor.make(
-#         variable_T_world_a=pose_variables[2],
-#         variable_T_world_b=pose_variables[3],
-#         T_a_b=jaxlie.SE2.from_xy_theta(-1.0, 3, 0.0),
-#         noise_model=jaxfg.noises.DiagonalGaussian(jnp.ones(3)),
-#     ),
-#     jaxfg.geometry.BetweenFactor.make(
-#         variable_T_world_a=pose_variables[3],
-#         variable_T_world_b=pose_variables[4],
-#         T_a_b=jaxlie.SE2.from_xy_theta(-1.0, 0.0, 0.0),
-#         noise_model=jaxfg.noises.DiagonalGaussian(jnp.ones(3)),
-#     ),
-#     jaxfg.geometry.BetweenFactor.make(
-#         variable_T_world_a=pose_variables[4],
-#         variable_T_world_b=pose_variables[5],
-#         T_a_b=jaxlie.SE2.from_xy_theta(0.0, -1.0, 0.0),
-#         noise_model=jaxfg.noises.DiagonalGaussian(jnp.ones(3)),
-#     ),
-#     jaxfg.geometry.BetweenFactor.make(
-#         variable_T_world_a=pose_variables[5],
-#         variable_T_world_b=pose_variables[0],
-#         T_a_b=jaxlie.SE2.from_xy_theta(1.0, 0.0, 0.0),
-#         noise_model=jaxfg.noises.DiagonalGaussian(jnp.ones(3)),
-#     ),
-# ]
 
-# (graphs, poses, comms) = graph_tools_nathan.partition_graph(
-#     pose_variables,
-#     factors,
-#     agent_node_map={
-#         '0': [0, 1, 2],
-#         '1': [2, 3, 4],
-#         '2': [4, 5, 0],
-#     },
-#     prior_precision=initial_sqrt_precision,
-#     noise_model=NOISE_MODEL,
-#     huber_delta=HUBER_DELTA,
-#     use_onp=USE_ONP)
-# Comms indexing
-# comms[some agent][index i corresponding to prior i] -> tuple (other agent, index of the node in global graph, index of node in other agent graph)
 graph_solutions = []
 
-g2o_path = 'data/square_g2o.g2o'
-g2o, pose_variables, agent_node_list = _g2o_utils_dist.parse_g2o(g2o_path)
-
+##### SPHERE EXAMPLE ##########
+g2o_path = 'data/sphere2500.g2o'
+g2o, pose_variables, _ = _g2o_utils_dist.parse_g2o(g2o_path)
+agent_node_list = {
+    'A': list(range(0, 1000 + 5)),
+    'B': list(range(1000, 1500 + 5)),
+    'C': list(range(1500, 2500))
+}
 (graphs, poses, comms) = graph_tools_nathan.partition_graph(
     pose_variables,
     g2o.factors,
@@ -98,6 +43,8 @@ g2o, pose_variables, agent_node_list = _g2o_utils_dist.parse_g2o(g2o_path)
     prior_precision=initial_sqrt_precision,
     noise_model='gaussian',
     use_onp=USE_ONP)
+# Comms indexing
+# comms[some agent][index i corresponding to prior i] -> tuple (other agent, index of the node in global graph, index of node in other agent graph)
 
 
 def big_function(prior_precisions):
@@ -127,7 +74,7 @@ def big_function(prior_precisions):
             for prior in range(noise_model.sqrt_precision_diagonal.shape[0]):
                 other_agent = comms[agent][prior][0]
                 agent_id = int(agent)
-                
+
                 other_agent_id = int(other_agent)
                 prior_precisions_softmax = prior_precisions
                 # prior_precisions_softmax = scipy.special.softmax(prior_precisions)
@@ -137,7 +84,7 @@ def big_function(prior_precisions):
                             noise_model.sqrt_precision_diagonal[prior, :]
                         ) * prior_precisions_softmax[
                             other_agent_id] * prior_precisions_softmax[
-                            agent_id] / jnp.mean(prior_precisions_softmax)
+                                agent_id] / jnp.mean(prior_precisions_softmax)
                 else:
                     noise_model.sqrt_precision_diagonal = jax.numpy.ones_like(
                         noise_model.sqrt_precision_diagonal
@@ -155,19 +102,27 @@ def big_function(prior_precisions):
         # Update factors based on solutions
         for agent in graphs:
             prior_factor_stack = graphs[agent].factor_stacks[1].factor
+            pose_type = type(prior_factor_stack.variables[0])
+            if pose_type == jaxfg.geometry._lie_variables.SE3Variable:
+                prior_factor_mu = prior_factor_stack.mu.wxyz_xyz
+                var_type = jaxfg.geometry.SE3Variable
+            else:
+                prior_factor_mu = prior_factor_stack.mu.unit_complex_xy
+                var_type = jaxfg.geometry.SE2Variable
             for i in range(prior_factor_stack.mu.unit_complex_xy.shape[0]):
                 (agent_id, global_node_id, agent_node_id) = comms[agent][i]
 
                 # get solution for prior factor i
-                node_solution = graph_solutions[-1][
-                    agent_id].get_stacked_value(
-                        jaxfg.geometry.SE2Variable).unit_complex_xy[
+                if var_type == jaxfg.geometry.SE2Variable:
+                    node_solution = graph_solutions[-1][
+                        agent_id].get_stacked_value(var_type).unit_complex_xy[
+                            agent_node_id, :]
+                else:
+                    node_solution = graph_solutions[-1][
+                        agent_id].get_stacked_value(var_type).wxyz_xyz[
                             agent_node_id, :]
 
-                # set mu for prior factor i
-                # print(i, comms[agent][i], node_solution)
-                # factor mus are numpy arrays????
-                new_factor_mu = prior_factor_stack.mu.unit_complex_xy[i, :] * (
+                new_factor_mu = prior_factor_mu[i, :] * (
                     1 - gamma) + node_solution * gamma
 
                 # jax version
@@ -183,13 +138,10 @@ def big_function(prior_precisions):
     return sum([
         graphs[agent_id].compute_cost(graph_solutions[-1][agent_id])[0]
         for agent_id in graphs
-    #])#    + 0.1 * jnp.linalg.norm(scipy.special.softmax(prior_precisions)) 
-    ])  + 1 * (1 - jnp.linalg.norm(prior_precisions))**2
+        #])#    + 0.1 * jnp.linalg.norm(scipy.special.softmax(prior_precisions))
+    ]) + 1 * (1 - jnp.linalg.norm(prior_precisions))**2
 
-# big_function(3.0)
-# with jaxfg.utils.stopwatch("Outer loop timing"):
-# big_function(3.0)
-# print("JAX GRAD",jax.grad(big_function)(3.0))
+
 eps = 1e-1
 num_agents = len(graphs)
 prior_precisions = jnp.ones(num_agents) * initial_sqrt_precision
@@ -220,7 +172,7 @@ for gradient_descent_iter in range(OUTER_ITERATIONS):
                 *(multi_agent_solution[agent_id].get_stacked_value(
                     jaxfg.geometry.SE2Variable).translation().T),
                 alpha=1 - (i / len(graph_solutions))**2,
-                c='C%d'%(int(agent_id)),
+                c='C%d' % (int(agent_id)),
                 label=f'iter={i} {agent_id} - optimized',
             )
         if NOISE_MODEL == "huber":

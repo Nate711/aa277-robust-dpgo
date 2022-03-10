@@ -150,20 +150,29 @@ def partition_graph(poses,
         for shared_node in set(agent_to_global_map).intersection(agent_j_nodes):
           agent_pose = agent_poses[global_to_agent_map[shared_node]]
           
-          noise_model_ = jaxfg.noises.DiagonalGaussian(jnp.ones(3) * prior_precision)
+          # handle SE2 or SE3
+          if type(agent_pose) == jaxfg.geometry._lie_variables.SE2Variable:
+            mu = jaxlie.SE2.identity()
+            noise_elements = 3
+          elif type(agent_pose) == jaxfg.geometry._lie_variables.SE3Variable:
+            mu = jaxlie.SE3.identity()
+            noise_elements = 6
+          else:
+            raise NotImplementedError
+
+          # Noise model for prior enforcing agent consensus
+          noise_model_ = jaxfg.noises.DiagonalGaussian(jnp.ones(noise_elements) * prior_precision)
+          
           if noise_model == 'huber':
             noise_model_ = jaxfg.noises.HuberWrapper(noise_model_, delta=huber_delta)
           elif noise_model == 'laplacian':
             noise_model_ = _laplacian.LaplacianWrapper(noise_model_)
+          
 
           prior_factors.append(
               jaxfg.geometry.PriorFactor.make(
                   variable=agent_pose,
-                  mu=jaxlie.SE2.from_xy_theta(
-                      0.0,
-                      0.0,
-                      0.0,
-                  ),
+                  mu=mu,
                   noise_model=noise_model_
               ))
           shared_node_indices.append(
